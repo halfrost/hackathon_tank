@@ -60,4 +60,8 @@ public class Tank extends  MovableObject {
     public boolean fired() {
         return (shell != null && !shell.isDestroyed());
     }
+
+    public static int compare(Tank x, Tank y) {
+        return (x.getId() < y.getId()) ? -1 : ((x.getId() == y.getId()) ? 0 : 1);
+    }
 }

@@ -34,4 +34,26 @@ public class TankOrder {
                 ", parameter='" + parameter + '\'' +
                 '}';
     }
+
+    public static boolean isValid(TankOrder o) {
+        if (o.getOrder() == null) {
+            System.out.println("Invalid order : " + o);
+            return false;
+        }
+        switch (o.getOrder()) {
+        case "move":
+            break;
+        case "fire":
+        case "turnTo":
+            if (o.getParameter() == null) {
+                System.out.println("Invalid order : " + o);
+                return false;
+            }
+            break;
+        default:
+            System.out.println("Invalid order : " + o);
+            return false;
+        }
+        return true;
+    }
 }

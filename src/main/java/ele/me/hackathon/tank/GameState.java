@@ -10,7 +10,9 @@ public class GameState {
     private String playerName;
     private List<Tank> tanks = new LinkedList<>();
     private List<Shell> shells = new LinkedList<>();
-    private int noOfFlag = 0;
+    private int yourFlagNo = 0;
+    private int enmeyFlagNo = 0;
+    private Position flagPos = null;
 
     public GameState(String playerName) {
         this.playerName = playerName;
@@ -28,11 +30,39 @@ public class GameState {
         return playerName;
     }
 
-    public int getNoOfFlag() {
-        return noOfFlag;
+    public int getYourFlagNo() {
+        return yourFlagNo;
     }
 
-    public void setNoOfFlag(int noOfFlag) {
-        this.noOfFlag = noOfFlag;
+    public void setYourFlagNo(int yourFlagNo) {
+        this.yourFlagNo = yourFlagNo;
+    }
+
+    public int getEnmeyFlagNo() {
+        return enmeyFlagNo;
+    }
+
+    public void setEnmeyFlagNo(int enmeyFlagNo) {
+        this.enmeyFlagNo = enmeyFlagNo;
+    }
+
+    public Position getFlagPos() {
+        return flagPos;
+    }
+
+    public void setFlagPos(Position flagPos) {
+        this.flagPos = flagPos;
+    }
+
+    @Override
+    public String toString() {
+        return "GameState{" +
+                "playerName='" + playerName + '\'' +
+                ", tanks=" + tanks +
+                ", shells=" + shells +
+                ", yourFlagNo=" + yourFlagNo +
+                ", enmeyFlagNo=" + enmeyFlagNo +
+                ", flagPos=" + flagPos +
+                '}';
     }
 }

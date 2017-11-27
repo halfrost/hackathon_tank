@@ -43,6 +43,25 @@ public class Position {
         }
     }
 
+    public Position withDrawStep(Direction dir) {
+        return moveOneStep(opposite(dir));
+    }
+
+    private Direction opposite(Direction dir) {
+        switch (dir) {
+        case UP:
+            return Direction.DOWN;
+        case DOWN:
+            return Direction.UP;
+        case LEFT:
+            return Direction.RIGHT;
+        case RIGHT:
+            return Direction.LEFT;
+        default:
+            return null;
+        }
+
+    }
 
     @Override
     public boolean equals(Object o) {
@@ -73,4 +92,5 @@ public class Position {
                 ", y=" + y +
                 '}';
     }
+
 }

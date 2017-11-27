@@ -40,4 +40,7 @@ public class Shell extends MovableObject {
                 '}';
     }
 
+    public static int compare(Shell x, Shell y) {
+        return (x.getId() < y.getId()) ? -1 : ((x.getId() == y.getId()) ? 0 : 1);
+    }
 }

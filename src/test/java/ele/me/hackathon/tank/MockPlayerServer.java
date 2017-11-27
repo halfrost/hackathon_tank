@@ -1,8 +1,9 @@
 package ele.me.hackathon.tank;
 
-import ele.me.hackathon.tank.player.*;
-import ele.me.hackathon.tank.player.Direction;
+import ele.me.hackathon.tank.player.Args;
 import ele.me.hackathon.tank.player.GameState;
+import ele.me.hackathon.tank.player.Order;
+import ele.me.hackathon.tank.player.PlayerServer;
 import org.apache.thrift.TException;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TSimpleServer;
@@ -68,7 +69,7 @@ public class MockPlayerServer {
         @Override
         public List<Order> getNewOrders() throws TException {
             List<Order> orders = new LinkedList<>();
-            tanks.forEach(i -> orders.add(new Order(i, "fire", Direction.DOWN)));
+            //tanks.forEach(i -> orders.add(new Order(i, "fire", Direction.DOWN)));
             return orders;
         }
     }

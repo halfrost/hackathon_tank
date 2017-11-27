@@ -61,18 +61,21 @@ public class PlayerInteract {
                     try {
                         GameState state = statusQueue.take();
                         System.out.println("Send state to " + getAddress() + " : " + PlayerInteract.toString(convert(state)));
+                        //System.out.println("Send state to " + getAddress() + " : " + Util.toJson(state));
                         client.latestState(convert(state));
-                    } catch (TException e) {
-                        e.printStackTrace();
-                    } catch (InterruptedException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
 
                     try {
                         List<Order> orders = client.getNewOrders();
                         System.out.println("Recv orders from " + getAddress() + " : " + PlayerInteract.toString(orders));
-                        commandQueue.offer(convertOrders(orders));
-                    } catch (TException e) {
+                        List<TankOrder> tankOrders = convertOrders(orders);
+                        if (!verifyPlayerInput(tankOrders)) {
+                            tankOrders = new LinkedList<>();
+                        }
+                        commandQueue.offer(tankOrders);
+                    } catch (Exception e) {
                         e.printStackTrace();
                         commandQueue.offer(new LinkedList<>());
                     }
@@ -80,6 +83,23 @@ public class PlayerInteract {
                 }
             }
         });
+    }
+
+    protected boolean verifyPlayerInput(List<TankOrder> tankOrders) {
+        if (tankOrders.stream().filter(o -> !tanks.contains(o.getTankId())).count() > 0) {
+            tankOrders.stream().filter(o -> !tanks.contains(o.getTankId())).forEach(o -> System.out.println(address + " try to control enemy's tank:" + o));
+            return false;
+        }
+        if (tankOrders.stream().map(TankOrder::getTankId).collect(Collectors.toSet()).size() < tankOrders.size()) {
+            System.out.println(address + " has duplicate orders");
+            return false;
+        }
+
+        if (tankOrders.stream().filter(o -> !TankOrder.isValid(o)).count() > 0) {
+            System.out.println(address + " has invalid orders");
+            return false;
+        }
+        return true;
     }
 
     private Args convertGameOptions(GameOptions gameOptions) {
@@ -98,7 +118,11 @@ public class PlayerInteract {
         ele.me.hackathon.tank.player.GameState res = new ele.me.hackathon.tank.player.GameState();
         res.setTanks(convertTanks(state.getTanks()));
         res.setShells(convertShells(state.getShells()));
-        res.setYourFlags(state.getNoOfFlag());
+        res.setYourFlagNo(state.getYourFlagNo());
+        res.setEnemyFlagNo(state.getEnmeyFlagNo());
+        if (state.getFlagPos() != null) {
+            res.setFlagPos(convertPosition(state.getFlagPos()));
+        }
         return res;
     }
 
@@ -133,10 +157,6 @@ public class PlayerInteract {
 
     private List<TankOrder> convertOrders(List<ele.me.hackathon.tank.player.Order> newOrders) {
         List<TankOrder> res = newOrders.stream().map(o -> convertTankOrder(o)).collect(Collectors.toList());
-        if (res.stream().filter(o -> !tanks.contains(o.getTankId())).count() > 0) {
-            res.stream().filter(o -> !tanks.contains(o.getTankId())).forEach(o -> System.out.println(address + " sent an invalid order:" + o));
-            return new LinkedList<>();
-        }
         return res;
     }
 
@@ -145,6 +165,9 @@ public class PlayerInteract {
     }
 
     private Direction convertDir(ele.me.hackathon.tank.player.Direction dir) {
+        if (dir == null)
+            return null;
+
         return Direction.findByValue(dir.getValue());
     }
 
@@ -178,7 +201,6 @@ public class PlayerInteract {
 
     public static String toString(ele.me.hackathon.tank.player.GameState state) {
         java.lang.StringBuilder sb = new java.lang.StringBuilder("GameState(");
-        boolean first = true;
 
         sb.append("tanks:");
         if (state.getTanks() == null) {
@@ -191,10 +213,7 @@ public class PlayerInteract {
             });
             sb.append("]");
         }
-        first = false;
-        if (!first)
-            sb.append(", ");
-        sb.append("shells:");
+        sb.append(",shells:");
         if (state.getShells() == null) {
             sb.append("null");
         } else {
@@ -205,17 +224,14 @@ public class PlayerInteract {
             });
             sb.append("]");
         }
-        first = false;
-        if (!first)
-            sb.append(", ");
-        sb.append("yourFlags:");
-        sb.append(state.getYourFlags());
-        first = false;
-        if (!first)
-            sb.append(", ");
-        sb.append("enemyFlags:");
-        sb.append(state.getEnemyFlags());
-        first = false;
+        sb.append(",yourFlags:");
+        sb.append(state.getYourFlagNo());
+        sb.append(",enemyFlags:");
+        sb.append(state.getEnemyFlagNo());
+        if (state.isSetFlagPos()) {
+            sb.append(",flagPos:");
+            sb.append(state.getFlagPos());
+        }
         sb.append(")");
         return sb.toString();
     }

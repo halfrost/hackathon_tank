@@ -2,17 +2,22 @@ package ele.me.hackathon.tank; /**
  * Created by lanjiangang on 27/10/2017.
  */
 
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class GameStateMachine {
     private GameMap map;
     private Map<Integer, Tank> tanks;
     private List<Shell> shells = new LinkedList<>();
-    private boolean flagExisting = false;
     private Position flagPos;
     private Map<String, Player> players;
-    private String loser;
+    private GameOptions options;
+    private List<Tank> destroyedTanks = new LinkedList<>();
+    private List<Shell> destroyedShells = new LinkedList<>();
+    private int replayStep = 1;
 
     public GameStateMachine(Map<Integer, Tank> tanks, GameMap map) {
         this.tanks = tanks;
@@ -20,39 +25,106 @@ public class GameStateMachine {
     }
 
     public void newOrders(List<TankOrder> orders) {
+        destroyedTanks.clear();
+        destroyedShells.clear();
+
         evaluateShellsMovement();
         evaluateFireActions(filtOrder(orders, "fire"));
         evaluateTurnDirectionActions(filtOrder(orders, "turnTo"));
         evaluateMoveActions(filtOrder(orders, "move"));
+
+    }
+
+    public void printReplayLog() {
+        System.out.println("ReplayStep " + replayStep++);
+
+        StringBuffer sb = new StringBuffer("ReplayLog: {");
+        generateTanksLog(sb);
+        generateShellsLog(sb);
+        generateFlagLog(sb);
+        sb.append("}");
+        System.out.println(sb.toString());
+    }
+
+    private void generateFlagLog(StringBuffer sb) {
+        if (flagPos != null) {
+            sb.append(",flag: {");
+            sb.append("position:{x:").append(flagPos.getX()).append(",y:").append(flagPos.getY()).append("}}");
+        }
+    }
+
+    private void generateShellsLog(StringBuffer sb) {
+        List<Shell> shells = new LinkedList<>();
+        shells.addAll(getShells());
+        shells.addAll(destroyedShells);
+        shells.sort(Shell::compare);
+
+        sb.append("shells: [");
+        for (Shell t : shells) {
+            sb.append("{");
+            sb.append("id:").append(t.getId());
+            sb.append(", dir:").append(t.getDir().name());
+            sb.append(", position:{x:").append(t.getPos().getX()).append(",y:").append(t.getPos().getY()).append("},");
+            sb.append(", status:").append(t.isDestroyed() ? "destroyed" : "alive");
+            sb.append("},");
+        }
+        if (shells.size() > 0)
+            sb.deleteCharAt(sb.length() - 1);
+        sb.append("]");
+    }
+
+    private void generateTanksLog(StringBuffer sb) {
+        List<Tank> tanks = new LinkedList<>();
+        tanks.addAll(getTankList());
+        tanks.addAll(destroyedTanks);
+        tanks.sort(Tank::compare);
+
+        sb.append("tanks: [");
+        for (Tank t : tanks) {
+            sb.append("{");
+            sb.append("id:").append(t.getId());
+            sb.append(", dir:").append(t.getDir().name());
+            sb.append(", position:{x:").append(t.getPos().getX()).append(",y:").append(t.getPos().getY()).append("}");
+            sb.append(", status:").append(t.isDestroyed() ? "destroyed" : "alive");
+            sb.append(", owner:").append(getPlayer(t).getName());
+            sb.append("},");
+        }
+        if (tanks.size() > 0)
+            sb.deleteCharAt(sb.length() - 1);
+        sb.append("],");
     }
 
     private void evaluateShellsMovement() {
-        shells.forEach(shell -> {
-            Position[] positions = shell.evaluateMoveTrack();
-            for (Position pos : positions) {
+        for (int i = 0; i < options.getShellSpeed(); i++) {
+            shells.forEach(s -> s.moveOneStep());
+            shells.forEach(shell -> {
+                Position pos = shell.getPos();
                 if (map.isBarrier(pos)) {
                     shell.destroyed();
-                    break;
                 } else {
                     Tank tankAt = getTankAt(pos);
                     if (tankAt != null) {
                         shell.destroyed();
                         tankAt.hit();
-                        break;
                     }
                 }
-                shell.moveTo(pos);
-            }
-        });
-
-        clearDestroyedTargets();
+            });
+            //evaluate result on each step
+            clearDestroyedTargets();
+        }
     }
 
     private void clearDestroyedTargets() {
-        List<Tank> destroyedTanks = tanks.values().stream().filter(t -> t.isDestroyed()).collect(Collectors.toCollection(() -> new LinkedList<>()));
-        destroyedTanks.forEach(t -> tanks.remove(t.getId()));
+        List<Tank> newDestroyedTanks = tanks.values().stream().filter(t -> t.isDestroyed()).collect(Collectors.toCollection(() -> new LinkedList<>()));
+        destroyedTanks.addAll(newDestroyedTanks);
+        newDestroyedTanks.forEach(t -> tanks.remove(t.getId()));
 
-        shells.removeIf(shell -> shell.isDestroyed());
+        shells.removeIf(shell -> {
+            if (shell.isDestroyed())
+                destroyedShells.add(shell);
+            return shell.isDestroyed();
+        });
+        printReplayLog();
     }
 
     private LinkedList<TankOrder> filtOrder(List<TankOrder> orders, String orderName) {
@@ -62,6 +134,7 @@ public class GameStateMachine {
     private void evaluateFireActions(List<TankOrder> orders) {
 
         List<Shell> newShells = new LinkedList<>();
+        //let all tanks fire first so as to simulate all tanks are acting in the SAME time .
         for (TankOrder order : orders) {
             if (!isValidateOrder(order))
                 continue;
@@ -72,6 +145,8 @@ public class GameStateMachine {
                 newShells.add(shell);
             }
         }
+        //then the state machine evaluate new shells's result.
+        //thus even if a tank is destroyed by new fired shell, it still has a chance to fire a shell before it dies.
         for (Shell shell : newShells) {
             if (map.isBarrier(shell.getPos())) {
                 shell.destroyed();
@@ -91,7 +166,7 @@ public class GameStateMachine {
     }
 
     private Tank getTankAt(Position pos) {
-        List<Tank> tanksAt = tanks.values().stream().filter(t -> t.getPos().equals(pos)).collect(Collectors.toCollection(() -> new LinkedList<>()));
+        List<Tank> tanksAt = tanks.values().stream().filter(t -> t.getPos().equals(pos)).collect(Collectors.toList());
         if (tanksAt.size() > 1) {
             String msg = "Found more than one tank in same position: ";
             for (Tank t : tanksAt) {
@@ -99,7 +174,7 @@ public class GameStateMachine {
             }
             throw new InvalidState(msg);
         }
-        return tanksAt.size() == 1 ? tanksAt.get(0) : null;
+        return tanksAt.size() > 0 ? tanksAt.get(0) : null;
     }
 
     private void evaluateTurnDirectionActions(List<TankOrder> orders) {
@@ -119,114 +194,81 @@ public class GameStateMachine {
     }
 
     private void evaluateMoveActions(List<TankOrder> orders) {
-        Map<Tank, Position[]> moveTracks = new LinkedHashMap<>(tanks.size());
-        orders.forEach(o -> {
-            if (isValidateOrder(o)) {
-                moveTracks.put(tanks.get(o.getTankId()), tanks.get(o.getTankId()).evaluateMoveTrack());
-            }
-        });
+        List<Tank> tanksToMove = orders.stream().filter(o -> isValidateOrder(o)).map(o -> getTanks().get(o.getTankId())).collect(Collectors.toList());
 
-        int maxMoves = 0;
-        for (Position[] p : moveTracks.values()) {
-            if (p.length > maxMoves)
-                maxMoves = p.length;
-        }
+        for (int i = 0; i < options.getTankSpeed(); i++) {
 
-        Map<Tank, Position> result = new LinkedHashMap<Tank, Position>();
-        initResult(result);
+            List<Tank> f2fTanks = tanksToMove.stream().filter(t -> hasFace2FaceTank(t, tanksToMove)).collect(Collectors.toList());
+            tanksToMove.removeAll(f2fTanks);
+            tanksToMove.forEach(t -> t.moveOneStep());
+            withdrawUntilNoOverlap(tanksToMove);
 
-        for (int i = 0; i < maxMoves; i++) {
+            //check flag
+            checkFlag();
 
-            final int finalI = i;
-
-            //check if tanks get overlapped
-            List<Tank> overlappedTanks = checkOverlap(i, moveTracks);
-
-            //check if tanks move into a barrier
-            checkBarrier(i, moveTracks);
-
-            //check if tank is destroyed by shells
-            List<Tank> destroyedTanks = checkShells(i, moveTracks);
-            destroyedTanks.forEach(t -> {
-                result.remove(t);
-                moveTracks.remove(t);
+            //check shells
+            tanksToMove.stream().forEach(t -> {
+                getShellAt(t.getPos()).forEach(s -> {
+                    s.destroyed();
+                    t.hit();
+                });
             });
 
-            //record latest result
-            moveTracks.forEach((tank, track) -> {
-                result.put(tank, track[finalI]);
-            });
-
-            //check if any tank will get the flag
-            checkFlag(result);
-
-            //remove tank which already evaluates all its movements.
-            //this will happen on condition that tanks have different speed.
-            for (Iterator<Tank> itr = moveTracks.keySet().iterator(); itr.hasNext(); ) {
-                Tank t = itr.next();
-                if (moveTracks.get(t).length - 1 == i) {
-                    itr.remove();
-                }
-            }
-
+            tanksToMove.removeIf(t -> t.isDestroyed());
             clearDestroyedTargets();
         }
-
-        //apply the result
-        result.forEach((tank, pos) -> tank.moveTo(pos));
     }
 
-    private void checkFlag(Map<Tank, Position> result) {
-        if (flagExisting) {
-            List<Map.Entry<Tank, Position>> tanks = result.entrySet().stream().filter(e -> e.getValue().equals(flagPos))
-                    .collect(Collectors.toCollection(() -> new LinkedList<>()));
-            if (tanks.size() > 0) {
-                flagExisting = false;
+     public void checkFlag() {
+         getTankList().stream().filter(t -> getFlagPos() != null && flagPos.equals(t.getPos())).forEach(t -> {
+             flagPos = null;
+             Player p = getPlayer(t);
+             p.captureFlag(t);
+         });
+     }
 
-                getPlayers().values().stream().filter(p -> p.belongTo(tanks.get(0).getKey())).forEach(p -> p.captureFlag());
+    private boolean hasFace2FaceTank(Tank t, List<Tank> tanksToMove) {
+        Position nextPos = t.getPos().moveOneStep(t.getDir());
+        for (Tank tank : tanksToMove) {
+            if (nextPos.equals(tank.getPos()) && tank.getDir().negative(t.getDir())) {
+                return true;
             }
+        }
+        return false;
+    }
+
+    private void withdrawUntilNoOverlap(List<Tank> allMovedTanks) {
+        List<Tank> invalidTanks = null;
+        while (!(invalidTanks = findInvalidTanks()).isEmpty()) {
+            invalidTanks.stream().filter(t -> allMovedTanks.contains(t)).forEach(t -> {
+                t.withdrawOneStep();
+                allMovedTanks.remove(t);
+            });
         }
     }
 
-    private List<Tank> checkShells(int i, Map<Tank, Position[]> moveTracks) {
-        List<Tank> tankList = new LinkedList<>();
-        for (Tank t : moveTracks.keySet()) {
-            List<Shell> shellList = getShellAt(moveTracks.get(t)[i]);
-
-            shellList.forEach(s -> s.destroyed());
-
-            if (shellList.size() >= t.getHp()) {
-                t.destroyed();
-                tankList.add(t);
-            }
-        }
-        return tankList;
+    private List<Tank> findInvalidTanks() {
+        return getTanks().values().stream().filter(t -> invalidPosition(t.getPos())).collect(Collectors.toList());
     }
 
-    private List<Tank> checkBarrier(int i, Map<Tank, Position[]> moveTracks) {
-        List<Tank> tankList = moveTracks.keySet().stream().filter(t -> map.isBarrier(moveTracks.get(t)[i]))
-                .collect(Collectors.toCollection(() -> new LinkedList<>()));
-        tankList.forEach(t -> moveTracks.remove(t));
-        return tankList;
-
+    private boolean invalidPosition(Position pos) {
+        return map.isBarrier(pos) || existingMoreThanOneTanks(pos);
     }
 
-    private List<Tank> checkOverlap(final int i, Map<Tank, Position[]> moveTracks) {
-        List<Position> evaluatedPoss = moveTracks.values().stream().map(p -> p[i]).collect(Collectors.toCollection(() -> new LinkedList<Position>()));
-
-        //add positions of standstill tanks
-        List<Position> stillTanksPos = getTanks().values().stream().filter(t -> !moveTracks.containsKey(t)).map(t -> t.getPos())
-                .collect(Collectors.toCollection(() -> new LinkedList<Position>()));
-        evaluatedPoss.addAll(stillTanksPos);
-
-        List<Tank> tankList = moveTracks.keySet().stream().filter(t -> Collections.frequency(evaluatedPoss, moveTracks.get(t)[i]) > 1)
-                .collect(Collectors.toCollection(() -> new LinkedList<>()));
-        tankList.forEach(t -> moveTracks.remove(t));
-        return tankList;
+    private Player getPlayer(Tank t) {
+        return getPlayers().values().stream().filter(p -> p.getTanks().contains(t.getId())).findFirst().get();
     }
 
-    private void initResult(Map<Tank, Position> result) {
-        tanks.values().forEach(t -> result.put(t, t.getPos()));
+    private Player getPlayer(int tid) {
+        return getPlayers().values().stream().filter(p -> p.getTanks().contains(tid)).findFirst().get();
+    }
+
+    private boolean existingMoreThanOneTanks(Position pos) {
+        return (getTankList().stream().filter(t -> pos.equals(t.getPos())).count() > 1);
+    }
+
+    public Collection<Tank> getTankList() {
+        return getTanks().values();
     }
 
     private List<Shell> getShellAt(Position position) {
@@ -235,64 +277,50 @@ public class GameStateMachine {
         return shellList;
     }
 
-    public Map<Integer, Tank> getTanks() {
-        return tanks;
-    }
-
-    public List<Tank> getLeftTanks() {
-        List<Tank> left = tanks.values().stream().filter(t -> !t.isDestroyed()).collect(Collectors.toCollection(() -> new LinkedList<Tank>()));
-        return left;
-    }
-
-    protected List<Shell> getShells() {
-        return shells;
-    }
-
     public int getFlagNoByPlayer(String name) {
         return getPlayers().get(name).getNoOfFlag();
     }
 
     public Position generateFlag() {
-        flagPos = new Position(map.size() / 2 + 1, map.size() / 2 + 1);
-        flagExisting = true;
+        flagPos = new Position(map.size() / 2, map.size() / 2);
+        System.out.println("Generate flag at " + flagPos);
+        //check if there is a tank just stays on the same position.
+        checkFlag();
         return flagPos;
     }
 
-    public void setPlayers(Map<String, Player> players) {
-        this.players = players;
-    }
-
-    public Map<String, Player> getPlayers() {
-        return players;
-    }
-
     public Map<String, GameState> reportState() {
-        Map<String, GameState> gamestate = new LinkedHashMap<>();
-        for (Player p : getPlayers().values()) {
-            GameState playerstate = new GameState(p.getName());
-            generateOwnState(playerstate);
-            gamestate.put(p.getName(), playerstate);
-        }
-        return gamestate;
+        return getPlayers().keySet().stream().collect(Collectors.toMap(name -> name, name -> generatePlayerState(name)));
     }
 
-    private void generateOwnState(GameState playerState) {
-        String playerName = playerState.getPlayerName();
+    private GameState generatePlayerState(String playerName) {
+        GameState playerState = new GameState(playerName);
+
         //add own tanks
         getPlayers().get(playerName).getTanks().stream().filter(tankId -> tankExisting(tankId)).forEach(tankId -> {
             playerState.getTanks().add(getTanks().get(tankId));
         });
 
-        //add enemy's tanks if thery are visible.
+        //add enemy's tanks if they are visible.
         getPlayers().entrySet().stream().filter(e -> !e.getKey().equals(playerName)).forEach(e -> {
             e.getValue().getTanks().stream().filter(tankId -> tankVisible(tankId)).forEach(tankId -> {
                 playerState.getTanks().add(getTanks().get(tankId));
             });
         });
 
-        //all shells are reported unless it is invisible
+        //all shells which are visible
         getShells().stream().filter(s -> map.isVisible(s.getPos())).forEach(s -> playerState.getShells().add(s));
 
+        playerState.setYourFlagNo(getFlagNoByPlayer(playerName));
+        playerState.setEnmeyFlagNo(getEnemyFlagNo(playerName));
+        playerState.setFlagPos(getFlagPos());
+
+        return playerState;
+
+    }
+
+    private int getEnemyFlagNo(String playerName) {
+        return getPlayers().values().stream().filter(p -> !p.getName().equals(playerName)).findFirst().get().getNoOfFlag();
     }
 
     private boolean tankVisible(Integer tankId) {
@@ -304,25 +332,49 @@ public class GameStateMachine {
     }
 
     public boolean gameOvered() {
+        boolean result = false;
         for (Player p : players.values()) {
             if (p.getTanks().stream().noneMatch(id -> tanks.containsKey(id) && !tanks.get(id).isDestroyed())) {
-                System.out.println("Player " + p.getName() + " lose game because all his tanks are destroyed!");
-                loser = p.getName();
-                return true;
+                System.out.println("Player " + p.getName() + " loses all tanks!");
+                result = true;
             }
         }
-        return false;
-    }
-
-    public String getLoser() {
-        return loser;
+        return result;
     }
 
     public Map<String, Integer> countScore(int tankScore, int flagScore) {
         return players.values().stream().collect(Collectors.toMap(p -> p.getName(), p -> {
             long score =
                     p.getTanks().stream().filter(id -> tanks.containsKey(id) && !tanks.get(id).isDestroyed()).count() * tankScore + p.getNoOfFlag() * flagScore;
-            return (int)score;
+            return (int) score;
         }));
+    }
+
+    public Map<Integer, Tank> getTanks() {
+        return tanks;
+    }
+
+    protected List<Shell> getShells() {
+        return shells;
+    }
+
+    public void setPlayers(Map<String, Player> players) {
+        this.players = players;
+    }
+
+    public Map<String, Player> getPlayers() {
+        return players;
+    }
+
+    public void setOptions(GameOptions options) {
+        this.options = options;
+    }
+
+    public long getPlayerTankNo(String playerAAddres) {
+        return getPlayers().get(playerAAddres).getTanks().stream().filter(id -> tanks.containsKey(id)).count();
+    }
+
+    public Position getFlagPos() {
+        return flagPos;
     }
 }
