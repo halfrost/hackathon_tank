@@ -21,6 +21,15 @@ elif [ $mapid -eq 2 ];then
  flag_score=1
  max_round=100
  round_timeout=2000
+elif [ $mapid -gt 2 ] ;then
+ tank_no=4
+ tank_speed=1
+ shell_speed=2
+ tank_HP=1
+ tank_score=1
+ flag_score=1
+ max_round=200
+ round_timeout=2000
 fi
 
 player1="red:80"
